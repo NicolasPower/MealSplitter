@@ -4,72 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Text Box</title>
-  <style>
-    :root {
-      font-family: Georgia, "Times New Roman", serif;
-      color: #1e2a22;
-      background: #eef2e8;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      min-height: 100vh;
-      margin: 0;
-      display: grid;
-      place-items: center;
-      background:
-        linear-gradient(rgba(30, 42, 34, 0.05) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(30, 42, 34, 0.05) 1px, transparent 1px),
-        #eef2e8;
-      background-size: 32px 32px;
-    }
-
-    main {
-      width: min(680px, calc(100% - 32px));
-      padding: clamp(28px, 6vw, 56px);
-      background: #fffdf6;
-      border: 1px solid #d3dacb;
-      border-radius: 8px;
-      box-shadow: 0 18px 50px rgba(45, 66, 50, 0.12);
-    }
-
-    label {
-      display: block;
-      margin-bottom: 12px;
-      font-size: clamp(22px, 5vw, 32px);
-      font-weight: 700;
-    }
-
-    textarea {
-      width: 100%;
-      min-height: 220px;
-      resize: vertical;
-      padding: 18px;
-      border: 1px solid #9aa993;
-      border-radius: 6px;
-      outline: none;
-      background: #fffffb;
-      color: #1e2a22;
-      font: 18px/1.5 Georgia, "Times New Roman", serif;
-    }
-
-    textarea::placeholder {
-      color: #7b887f;
-    }
-
-    textarea:focus {
-      border-color: #52705b;
-      box-shadow: 0 0 0 4px rgba(82, 112, 91, 0.14);
-    }
-  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 </head>
-<body>
-  <main>
-    <label for="message">Your text</label>
-    <textarea id="message" name="message" placeholder="Start typing..."></textarea>
+<body class="grid min-h-screen place-items-center bg-[linear-gradient(rgba(30,42,34,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(30,42,34,0.05)_1px,transparent_1px),#eef2e8] bg-[size:32px_32px] font-[Georgia,'Times_New_Roman',serif] text-[#1e2a22]">
+  <main class="w-[min(680px,calc(100%-32px))] rounded-lg border border-[#d3dacb] bg-[#fffdf6] px-7 py-7 shadow-[0_18px_50px_rgba(45,66,50,0.12)] sm:px-14 sm:py-14">
+    <label for="message" class="mb-3 block text-[clamp(22px,5vw,32px)] font-bold">Your text</label>
+    <textarea id="message" name="message" placeholder="Start typing..." class="min-h-[220px] w-full resize-y rounded-md border border-[#9aa993] bg-[#fffffb] p-[18px] text-[18px] leading-[1.5] text-[#1e2a22] outline-none placeholder:text-[#7b887f] focus:border-[#52705b] focus:ring-4 focus:ring-[rgba(82,112,91,0.14)]"></textarea>
   </main>
 </body>
 </html>
