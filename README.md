@@ -4,13 +4,19 @@ A simple static web interface for entering meal text, built with HTML and Tailwi
 
 ## Getting started
 
-Open `index.html` directly in a browser, or serve the project with a local web server:
+Add your USDA FoodData Central API key to `.env`:
 
-```powershell
-python -m http.server 8000
+```text
+USDA_FOOD_CENTRAL_API_KEY=your_api_key_here
 ```
 
-Then visit `http://localhost:8000`.
+Then start the included local server:
+
+```powershell
+node server.js
+```
+
+Then visit `http://localhost:3000`. The button sends the text box value to USDA FoodData Central through `app.js` and `server.js`; the API key stays on the server and is not exposed in browser code.
 
 ## Styling
 
