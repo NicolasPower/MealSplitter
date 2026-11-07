@@ -5,7 +5,7 @@ const results = document.querySelector("#food-results");
 
 button.addEventListener("click", async () => {
   const queries = message.value
-    .split(/[\n,]+/)
+    .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean);
   
@@ -105,7 +105,7 @@ button.addEventListener("click", async () => {
 
     const assumption = data.assumedGrams
       ? "Foods without a gram or kilogram amount are estimated at 100 g."
-      : "Uses the entered gram amounts, with plain food names estimated at 100 g each.";
+      : "Uses cleaned quantities and estimated gram weights for common counts and cooking units.";
 
     results.innerHTML = `
       <h2 class="text-xl font-bold">Nutrition for one of ${servings} ${servings === 1 ? "serving" : "servings"}</h2>

@@ -42,33 +42,61 @@ async function searchFoods(query) {
   if (!apiKey) throw Object.assign(new Error("USDA_FOOD_CENTRAL_API_KEY is missing from .env"), { status: 500 });
 
   const url = `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${encodeURIComponent(apiKey)}`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, pageSize: 10 }),
-  });
-  const responseText = await response.text();
-  let data = {};
+  let lastError;
+  const cleanQuery = String(query || "")
+    .replace(/[^a-z0-9\s%/-]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 200);
 
-  if (responseText) {
+  if (!cleanQuery) {
+    throw Object.assign(new Error("The cleaned ingredient name is empty."), { status: 400 });
+  }
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      data = JSON.parse(responseText);
-    } catch {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: cleanQuery, pageSize: 10 }),
+      });
+      const responseText = await response.text();
+      let data = {};
+
+      if (responseText) {
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          if (!response.ok) {
+            throw Object.assign(
+              new Error(`USDA FoodData Central returned ${response.status}: ${responseText.trim()}`),
+              { status: response.status }
+            );
+          }
+          throw Object.assign(new Error("USDA FoodData Central returned an invalid response."), { status: 502 });
+        }
+      }
+
       if (!response.ok) {
+        const message = typeof data.error === "string"
+          ? data.error
+          : data.error?.message || data.message || `HTTP ${response.status}`;
         throw Object.assign(
-          new Error(`USDA FoodData Central returned ${response.status}: ${responseText.trim()}`),
+          new Error(`USDA FoodData Central request failed (${response.status}): ${message}`),
           { status: response.status }
         );
       }
-      throw Object.assign(new Error("USDA FoodData Central returned an invalid response."), { status: 502 });
+
+      return data;
+    } catch (error) {
+      lastError = error;
+      if (error.status && error.status < 500 && error.status !== 429) throw error;
+      if (attempt === 3) throw error;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 500));
     }
   }
 
-  if (!response.ok) {
-    throw Object.assign(new Error(data.error?.message || "USDA FoodData Central request failed"), { status: response.status });
-  }
-
-  return data;
+  throw lastError;
 }
 
 const nutrientConfig = {
@@ -82,17 +110,75 @@ const nutrientConfig = {
   1253: { key: "cholesterol", label: "Cholesterol", unit: "mg" },
 };
 
+function parseNumber(value) {
+  const mixedMatch = value.match(/^(\d+)\s+(\d+)\/(\d+)$/);
+  if (mixedMatch) return Number(mixedMatch[1]) + Number(mixedMatch[2]) / Number(mixedMatch[3]);
+
+  const fractionMatch = value.match(/^(\d+)\/(\d+)$/);
+  if (fractionMatch) return Number(fractionMatch[1]) / Number(fractionMatch[2]);
+
+  return Number(value);
+}
+
+function cleanFoodName(name) {
+  return name
+    .replace(/\b(boneless|skinless|crushed|peeled|grated|diced|chopped|mild|medium|hot|full fat|fine sea|ground)\b/gi, " ")
+    .replace(/,.*$/, "")
+    .replace(/\b(cut|into)\b.*$/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function parseFoodEntry(entry) {
-  const trimmed = entry.trim();
-  const match = trimmed.match(/^(\d+(?:\.\d+)?)\s*(kg|kilograms?|g|grams?)\s+(.+)$/i);
+  let cleaned = entry.trim()
+    .replace(/^[-*]\s*\[[ xX]\]\s*/, "")
+    .replace(/^\s*\[[ xX]\]\s*/, "");
 
-  if (!match) return { query: trimmed, grams: 100, explicitAmount: false };
+  if (!cleaned) return { query: "", grams: 100, explicitAmount: false };
 
-  const amount = Number(match[1]);
-  const unit = match[2].toLowerCase();
+  cleaned = cleaned.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+  const match = cleaned.match(/^((?:\d+\s+\d+\/\d+)|(?:\d+\/\d+)|(?:\d+(?:\.\d+)?))\s*(kg|kilograms?|g|grams?|mg|milligrams?|cups?|tbsp|tablespoons?|tsp|teaspoons?|l|litres?|ml|millilitres?|ounces?|oz|lbs?|pounds?|breasts?|cloves?|onions?|pieces?|cm|centimetres?|centimeters?)?\s+(.+)$/i);
+
+  if (!match) {
+    return { query: cleanFoodName(cleaned.split(",")[0].trim()), grams: 100, explicitAmount: false };
+  }
+
+  const amount = parseNumber(match[1]);
+  const unit = (match[2] || "").toLowerCase();
+  const baseName = cleanFoodName(match[3].split(",")[0].trim());
+
+  const unitGrams = {
+    kg: 1000, kilogram: 1000, kilograms: 1000,
+    g: 1, gram: 1, grams: 1,
+    mg: 0.001, milligram: 0.001, milligrams: 0.001,
+    cup: 240, cups: 240,
+    tbsp: 15, tablespoon: 15, tablespoons: 15,
+    tsp: 5, teaspoon: 5, teaspoons: 5,
+    l: 1000, litre: 1000, litres: 1000,
+    ml: 1, millilitre: 1, millilitres: 1,
+    ounce: 28.35, ounces: 28.35, oz: 28.35,
+    lb: 453.59, lbs: 453.59, pound: 453.59, pounds: 453.59,
+    breast: 120, breasts: 120,
+    clove: 3, cloves: 3,
+    onion: 150, onions: 150,
+    piece: 100, pieces: 100,
+    cm: 15, centimetre: 15, centimetres: 15, centimeter: 15, centimeters: 15,
+  };
+
+  let grams;
+  if (!unit) {
+    const countWeight = /chicken|breast/i.test(baseName) ? 120
+      : /garlic/i.test(baseName) ? 3
+        : /onion/i.test(baseName) ? 150
+          : 100;
+    grams = amount * countWeight;
+  } else {
+    grams = amount * (unitGrams[unit] || 100);
+  }
+
   return {
-    query: match[3].trim(),
-    grams: unit.startsWith("kg") || unit.startsWith("kilogram") ? amount * 1000 : amount,
+    query: baseName || cleanFoodName(match[3]),
+    grams: Math.max(0, grams),
     explicitAmount: true,
   };
 }
@@ -141,7 +227,8 @@ const server = http.createServer(async (request, response) => {
         const entries = queries
           .filter((entry) => typeof entry === "string" && entry.trim())
           .slice(0, 20)
-          .map(parseFoodEntry);
+          .map(parseFoodEntry)
+          .filter((entry) => entry.query);
 
         if (!entries.length) {
           response.writeHead(400, { "Content-Type": "application/json" });
@@ -153,7 +240,16 @@ const server = http.createServer(async (request, response) => {
         const foods = [];
 
         for (const entry of entries) {
-          const data = await searchFoods(entry.query);
+          let data;
+          try {
+            data = await searchFoods(entry.query);
+          } catch (error) {
+            if (error.status === 400) {
+              foods.push({ query: entry.query, grams: entry.grams, match: null });
+              continue;
+            }
+            throw error;
+          }
           const match = chooseBestMatch(entry.query, data.foods || []);
           if (!match) {
             foods.push({ query: entry.query, grams: entry.grams, match: null });
