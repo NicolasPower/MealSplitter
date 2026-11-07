@@ -8,12 +8,16 @@
 </head>
 <body class="grid min-h-screen place-items-center bg-[linear-gradient(rgba(30,42,34,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(30,42,34,0.05)_1px,transparent_1px),#eef2e8] bg-[size:32px_32px] font-[Georgia,'Times_New_Roman',serif] text-[#1e2a22]">
   <main class="w-[min(680px,calc(100%-32px))] rounded-lg border border-[#d3dacb] bg-[#fffdf6] px-7 py-7 shadow-[0_18px_50px_rgba(45,66,50,0.12)] sm:px-14 sm:py-14">
-    <label for="message" class="mb-3 block text-[clamp(22px,5vw,32px)] font-bold">Your text</label>
-    <textarea id="message" name="message" placeholder="Start typing..." class="min-h-[220px] w-full resize-y rounded-md border border-[#9aa993] bg-[#fffffb] p-[18px] text-[18px] leading-[1.5] text-[#1e2a22] outline-none placeholder:text-[#7b887f] focus:border-[#52705b] focus:ring-4 focus:ring-[rgba(82,112,91,0.14)]"></textarea>
+    <label for="message" class="mb-3 block text-[clamp(22px,5vw,32px)] font-bold">Foods</label>
+    <textarea id="message" name="message" placeholder="100 g chicken breast&#10;200 g brown rice&#10;apple" class="min-h-[220px] w-full resize-y rounded-md border border-[#9aa993] bg-[#fffffb] p-[18px] text-[18px] leading-[1.5] text-[#1e2a22] outline-none placeholder:text-[#7b887f] focus:border-[#52705b] focus:ring-4 focus:ring-[rgba(82,112,91,0.14)]"></textarea>
+    <div class="mt-4">
+      <label for="servings" class="mb-2 block font-bold">Number of servings</label>
+      <input id="servings" name="servings" type="number" min="1" max="50" step="1" value="1" class="w-full rounded-md border border-[#9aa993] bg-[#fffffb] px-4 py-3 text-[18px] outline-none focus:border-[#52705b] focus:ring-4 focus:ring-[rgba(82,112,91,0.14)]" />
+    </div>
     <button id="search-foods" type="button" class="mt-4 w-full rounded-md bg-[#52705b] px-4 py-3 font-bold text-white transition hover:bg-[#415d49] disabled:cursor-not-allowed disabled:opacity-60">
       Search USDA FoodData Central
     </button>
-    <pre id="food-results" class="mt-4 hidden max-h-80 overflow-auto rounded-md border border-[#d3dacb] bg-white p-4 text-sm whitespace-pre-wrap"></pre>
+    <div id="food-results" class="mt-4 hidden rounded-md border border-[#d3dacb] bg-white p-4"></div>
   </main>
   <script src="app.js"></script>
 </body>
