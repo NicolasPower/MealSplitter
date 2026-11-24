@@ -1,6 +1,7 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
+const sqlite3 = require("sqlite3").verbose();
 
 const root = __dirname;
 const port = Number(process.env.PORT || 3000);
@@ -20,6 +21,50 @@ function loadEnvironment() {
 }
 
 loadEnvironment();
+
+const db = new sqlite3.Database(path.join(root, "meals.db"));
+
+function run(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function onRun(error) {
+      if (error) reject(error);
+      else resolve({ id: this.lastID, changes: this.changes });
+    });
+  });
+}
+
+function all(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (error, rows) => {
+      if (error) reject(error);
+      else resolve(rows);
+    });
+  });
+}
+
+function get(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (error, row) => {
+      if (error) reject(error);
+      else resolve(row);
+    });
+  });
+}
+
+const dbReady = run(`
+  CREATE TABLE IF NOT EXISTS meals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    ingredients TEXT NOT NULL,
+    servings INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )
+`);
+
+dbReady.catch((error) => {
+  console.error("Unable to initialize the meal database:", error);
+});
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -220,6 +265,58 @@ function getNutrients(food, grams) {
 
 const server = http.createServer(async (request, response) => {
   try {
+    await dbReady;
+    if (request.method === "GET" && request.url === "/api/meals") {
+      const meals = await all("SELECT id, name, ingredients, servings, created_at, updated_at FROM meals ORDER BY updated_at DESC");
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ meals }));
+      return;
+    }
+
+    if (request.method === "POST" && request.url === "/api/meals") {
+      const { name, ingredients, servings } = await readJson(request);
+      const cleanName = typeof name === "string" ? name.trim() : "";
+      const cleanIngredients = typeof ingredients === "string" ? ingredients.trim() : "";
+      const cleanServings = Math.min(50, Math.max(1, Math.floor(Number(servings) || 1)));
+
+      if (!cleanName) {
+        response.writeHead(400, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ error: "A meal name is required." }));
+        return;
+      }
+      if (!cleanIngredients) {
+        response.writeHead(400, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ error: "Add at least one ingredient." }));
+        return;
+      }
+
+      const timestamp = new Date().toISOString();
+      const result = await run(
+        "INSERT INTO meals (name, ingredients, servings, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        [cleanName, cleanIngredients, cleanServings, timestamp, timestamp]
+      );
+      const meal = await get(
+        "SELECT id, name, ingredients, servings, created_at, updated_at FROM meals WHERE id = ?",
+        [result.id]
+      );
+      response.writeHead(201, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ meal }));
+      return;
+    }
+
+    const mealDeleteMatch = request.url?.match(/^\/api\/meals\/(\d+)$/);
+    if (request.method === "DELETE" && mealDeleteMatch) {
+      const result = await run("DELETE FROM meals WHERE id = ?", [Number(mealDeleteMatch[1])]);
+      if (!result.changes) {
+        response.writeHead(404, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ error: "Meal not found." }));
+        return;
+      }
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ deleted: true }));
+      return;
+    }
+
     if (request.method === "POST" && request.url === "/api/foods/search") {
       const { query, queries } = await readJson(request);
 

@@ -2,6 +2,111 @@ const button = document.querySelector("#search-foods");
 const message = document.querySelector("#message");
 const servingsInput = document.querySelector("#servings");
 const results = document.querySelector("#food-results");
+const savedMealsSelect = document.querySelector("#saved-meals");
+const mealNameInput = document.querySelector("#meal-name");
+const saveMealButton = document.querySelector("#save-meal");
+const deleteMealButton = document.querySelector("#delete-meal");
+
+let savedMeals = [];
+
+async function readApiResponse(response) {
+  const text = await response.text();
+  let data = {};
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error("The server returned an invalid JSON response.");
+    }
+  }
+  if (!response.ok) throw new Error(data.error || "The request failed.");
+  return data;
+}
+
+function renderSavedMeals() {
+  savedMealsSelect.innerHTML = '<option value="">Select a saved meal</option>';
+  for (const meal of savedMeals) {
+    const option = document.createElement("option");
+    option.value = String(meal.id);
+    option.textContent = meal.name;
+    savedMealsSelect.append(option);
+  }
+  deleteMealButton.disabled = !savedMealsSelect.value;
+}
+
+async function loadSavedMeals() {
+  try {
+    const data = await readApiResponse(await fetch("/api/meals"));
+    savedMeals = data.meals;
+    renderSavedMeals();
+  } catch (error) {
+    savedMealsSelect.innerHTML = '<option value="">Unable to load saved meals</option>';
+  }
+}
+
+savedMealsSelect.addEventListener("change", () => {
+  const meal = savedMeals.find((item) => item.id === Number(savedMealsSelect.value));
+  deleteMealButton.disabled = !meal;
+  if (!meal) return;
+  message.value = meal.ingredients;
+  servingsInput.value = String(meal.servings);
+  mealNameInput.value = meal.name;
+});
+
+saveMealButton.addEventListener("click", async () => {
+  const name = mealNameInput.value.trim();
+  const ingredients = message.value.trim();
+  if (!name) {
+    mealNameInput.focus();
+    return;
+  }
+  if (!ingredients) {
+    message.focus();
+    return;
+  }
+
+  saveMealButton.disabled = true;
+  try {
+    const data = await readApiResponse(await fetch("/api/meals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        ingredients,
+        servings: servingsInput.value,
+      }),
+    }));
+    savedMeals.unshift(data.meal);
+    renderSavedMeals();
+    savedMealsSelect.value = String(data.meal.id);
+    deleteMealButton.disabled = false;
+  } catch (error) {
+    results.textContent = error.message;
+    results.classList.remove("hidden");
+  } finally {
+    saveMealButton.disabled = false;
+  }
+});
+
+deleteMealButton.addEventListener("click", async () => {
+  const mealId = Number(savedMealsSelect.value);
+  if (!mealId) return;
+
+  deleteMealButton.disabled = true;
+  try {
+    await readApiResponse(await fetch(`/api/meals/${mealId}`, { method: "DELETE" }));
+    savedMeals = savedMeals.filter((meal) => meal.id !== mealId);
+    renderSavedMeals();
+    mealNameInput.value = "";
+  } catch (error) {
+    results.textContent = error.message;
+    results.classList.remove("hidden");
+  } finally {
+    deleteMealButton.disabled = !savedMealsSelect.value;
+  }
+});
+
+loadSavedMeals();
 
 button.addEventListener("click", async () => {
   const queries = message.value

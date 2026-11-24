@@ -18,6 +18,8 @@ node server.js
 
 Then visit `http://localhost:3000`. The button sends the text box value to USDA FoodData Central through `app.js` and `server.js`; the API key stays on the server and is not exposed in browser code.
 
+Saved meals are stored locally in `meals.db` using SQLite. Use the saved-meal dropdown to prefill the ingredient list and serving count, or enter a name and choose **Save meal** to add the current ingredients.
+
 ## Styling
 
 Tailwind CSS is loaded from the Tailwind browser CDN in `index.html`, so no build step or package installation is required.
