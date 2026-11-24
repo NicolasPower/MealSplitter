@@ -6,6 +6,8 @@ const savedMealsSelect = document.querySelector("#saved-meals");
 const mealNameInput = document.querySelector("#meal-name");
 const saveMealButton = document.querySelector("#save-meal");
 const deleteMealButton = document.querySelector("#delete-meal");
+const recipeUrlInput = document.querySelector("#recipe-url");
+const importRecipeButton = document.querySelector("#import-recipe");
 
 let savedMeals = [];
 
@@ -107,6 +109,35 @@ deleteMealButton.addEventListener("click", async () => {
 });
 
 loadSavedMeals();
+
+importRecipeButton.addEventListener("click", async () => {
+  const url = recipeUrlInput.value.trim();
+  if (!url) {
+    recipeUrlInput.focus();
+    return;
+  }
+
+  importRecipeButton.disabled = true;
+  importRecipeButton.textContent = "Importing...";
+  try {
+    const data = await readApiResponse(await fetch("/api/recipes/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    }));
+    message.value = data.recipe.ingredients.join("\n");
+    if (data.recipe.name) mealNameInput.value = data.recipe.name;
+    if (data.recipe.servings) servingsInput.value = String(data.recipe.servings);
+    results.textContent = `Imported ${data.recipe.ingredients.length} ingredients.`;
+    results.classList.remove("hidden");
+  } catch (error) {
+    results.textContent = error.message;
+    results.classList.remove("hidden");
+  } finally {
+    importRecipeButton.disabled = false;
+    importRecipeButton.textContent = "Import";
+  }
+});
 
 button.addEventListener("click", async () => {
   const queries = message.value

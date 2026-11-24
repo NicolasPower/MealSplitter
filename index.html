@@ -19,6 +19,12 @@
         </button>
       </div>
     </section>
+    <div class="mb-4 flex gap-2">
+      <input id="recipe-url" name="recipe-url" type="url" placeholder="Paste recipe URL" aria-label="Recipe URL" class="min-w-0 flex-1 rounded-md border border-[#9aa993] bg-[#fffffb] px-4 py-3 outline-none focus:border-[#52705b] focus:ring-4 focus:ring-[rgba(82,112,91,0.14)]" />
+      <button id="import-recipe" type="button" class="rounded-md border border-[#52705b] px-4 py-3 font-bold text-[#52705b] transition hover:bg-[#edf3e8] disabled:cursor-not-allowed disabled:opacity-60">
+        Import
+      </button>
+    </div>
     <label for="message" class="mb-3 block text-[clamp(22px,5vw,32px)] font-bold">Foods</label>
     <textarea id="message" name="message" placeholder="- [ ] 4 chicken breasts&#10;- [ ] 3 garlic cloves&#10;- [ ] 100 g Greek yoghurt&#10;- [ ] 3 tbsp curry powder" class="min-h-[220px] w-full resize-y rounded-md border border-[#9aa993] bg-[#fffffb] p-[18px] text-[18px] leading-[1.5] text-[#1e2a22] outline-none placeholder:text-[#7b887f] focus:border-[#52705b] focus:ring-4 focus:ring-[rgba(82,112,91,0.14)]"></textarea>
     <div class="mt-4">

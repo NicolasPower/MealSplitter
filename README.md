@@ -20,6 +20,8 @@ Then visit `http://localhost:3000`. The button sends the text box value to USDA 
 
 Saved meals are stored locally in `meals.db` using SQLite. Use the saved-meal dropdown to prefill the ingredient list and serving count, or enter a name and choose **Save meal** to add the current ingredients.
 
+To import ingredients from a recipe, paste its URL into the recipe URL field and choose **Import**. The importer reads recipe data published as Schema.org JSON-LD; some websites may not provide ingredients in a readable format.
+
 ## Styling
 
 Tailwind CSS is loaded from the Tailwind browser CDN in `index.html`, so no build step or package installation is required.

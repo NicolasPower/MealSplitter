@@ -1,6 +1,8 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
+const dns = require("node:dns").promises;
+const net = require("node:net");
 const sqlite3 = require("sqlite3").verbose();
 
 const root = __dirname;
@@ -79,6 +81,191 @@ async function readJson(request) {
     return JSON.parse(body || "{}");
   } catch {
     throw Object.assign(new Error("Invalid JSON request body."), { status: 400 });
+  }
+}
+
+function isPublicAddress(address) {
+  const version = net.isIP(address);
+  if (version === 4) {
+    const octets = address.split(".").map(Number);
+    const [a, b, c] = octets;
+    return !(
+      a === 0 || a === 10 || a === 127 || a >= 224 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 0 && (c === 0 || c === 2 || c === 88)) ||
+      (a === 192 && b === 168) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      (a === 198 && b === 51 && c === 100) ||
+      (a === 203 && b === 0 && c === 113)
+    );
+  }
+
+  if (version !== 6) return false;
+  const lower = address.toLowerCase();
+  if (lower.startsWith("::ffff:")) {
+    const mapped = lower.slice(7);
+    if (net.isIP(mapped) === 4) return isPublicAddress(mapped);
+  }
+
+  const pieces = lower.split("::");
+  const left = pieces[0] ? pieces[0].split(":") : [];
+  const right = pieces[1] ? pieces[1].split(":") : [];
+  const groups = pieces.length === 2
+    ? [...left, ...Array(8 - left.length - right.length).fill("0"), ...right]
+    : left;
+  if (groups.length !== 8) return false;
+  const first = parseInt(groups[0], 16);
+  const second = parseInt(groups[1], 16);
+  return first >= 0x2000 && first <= 0x3fff &&
+    !(first === 0x2001 && second === 0x0db8);
+}
+
+async function validateRecipeUrl(url) {
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
+    throw Object.assign(new Error("Enter a public HTTP or HTTPS recipe URL."), { status: 400 });
+  }
+
+  const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
+  if (!hostname || hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local")) {
+    throw Object.assign(new Error("Only public recipe websites can be imported."), { status: 400 });
+  }
+
+  let addresses;
+  try {
+    addresses = await dns.lookup(hostname, { all: true, verbatim: true });
+  } catch {
+    throw Object.assign(new Error("The recipe website could not be reached."), { status: 400 });
+  }
+  if (!addresses.length || addresses.some(({ address }) => !isPublicAddress(address))) {
+    throw Object.assign(new Error("Only public recipe websites can be imported."), { status: 400 });
+  }
+}
+
+async function readLimitedResponse(response, maxBytes) {
+  const contentLength = Number(response.headers.get("content-length"));
+  if (contentLength > maxBytes) {
+    throw Object.assign(new Error("The recipe page is too large to import."), { status: 413 });
+  }
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel();
+      throw Object.assign(new Error("The recipe page is too large to import."), { status: 413 });
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function decodeHtmlEntities(value) {
+  return value.replace(/&(#x[\da-f]+|#\d+|amp|quot|apos|lt|gt|nbsp);/gi, (entity, code) => {
+    if (code[0] === "#") {
+      const number = code[1].toLowerCase() === "x"
+        ? parseInt(code.slice(2), 16)
+        : parseInt(code.slice(1), 10);
+      return Number.isFinite(number) ? String.fromCodePoint(number) : entity;
+    }
+    return { amp: "&", quot: "\"", apos: "'", lt: "<", gt: ">", nbsp: " " }[code.toLowerCase()];
+  });
+}
+
+function getRecipeFromHtml(html) {
+  const candidates = [];
+  const scripts = html.matchAll(/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi);
+
+  function collectRecipes(value) {
+    if (Array.isArray(value)) {
+      value.forEach(collectRecipes);
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    const types = Array.isArray(value["@type"]) ? value["@type"] : [value["@type"]];
+    if (types.some((type) => typeof type === "string" && type.toLowerCase().split(/[\/#]/).pop() === "recipe")) {
+      candidates.push(value);
+    }
+    if (value["@graph"]) collectRecipes(value["@graph"]);
+    if (value.mainEntity) collectRecipes(value.mainEntity);
+    if (value.itemListElement) collectRecipes(value.itemListElement);
+  }
+
+  for (const match of scripts) {
+    try {
+      collectRecipes(JSON.parse(match[1].replace(/^\s*<!--|-->\s*$/g, "").trim()));
+    } catch {
+      continue;
+    }
+  }
+
+  const recipe = candidates.find((candidate) =>
+    Array.isArray(candidate.recipeIngredient) && candidate.recipeIngredient.some((item) => typeof item === "string" && item.trim())
+  );
+  if (!recipe) return null;
+
+  const ingredients = recipe.recipeIngredient
+    .filter((ingredient) => typeof ingredient === "string" && ingredient.trim())
+    .map((ingredient) => decodeHtmlEntities(ingredient).trim());
+  const yieldText = Array.isArray(recipe.recipeYield) ? recipe.recipeYield.join(" ") : String(recipe.recipeYield || "");
+  const servingsMatch = yieldText.match(/\d+/);
+  return {
+    name: decodeHtmlEntities(typeof recipe.name === "string" ? recipe.name : "").trim(),
+    ingredients,
+    servings: servingsMatch ? Math.min(50, Math.max(1, Number(servingsMatch[0]))) : null,
+  };
+}
+
+async function scrapeRecipe(urlValue) {
+  if (typeof urlValue !== "string" || urlValue.length > 2048) {
+    throw Object.assign(new Error("Enter a valid recipe URL."), { status: 400 });
+  }
+
+  let currentUrl;
+  try {
+    currentUrl = new URL(urlValue);
+  } catch {
+    throw Object.assign(new Error("Enter a valid recipe URL."), { status: 400 });
+  }
+
+  for (let redirects = 0; redirects <= 5; redirects++) {
+    await validateRecipeUrl(currentUrl);
+    const page = await fetch(currentUrl, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(10000),
+      headers: { "User-Agent": "MealSplitter/1.0 (recipe ingredient importer)", Accept: "text/html,application/xhtml+xml" },
+    });
+
+    if ([301, 302, 303, 307, 308].includes(page.status)) {
+      const location = page.headers.get("location");
+      await page.body?.cancel();
+      if (!location || redirects === 5) {
+        throw Object.assign(new Error("The recipe page redirected too many times."), { status: 502 });
+      }
+      currentUrl = new URL(location, currentUrl);
+      continue;
+    }
+
+    if (!page.ok) {
+      await page.body?.cancel();
+      throw Object.assign(new Error(`The recipe website returned HTTP ${page.status}.`), { status: 502 });
+    }
+    const contentType = page.headers.get("content-type") || "";
+    if (!/text\/html|application\/xhtml\+xml/i.test(contentType)) {
+      await page.body?.cancel();
+      throw Object.assign(new Error("The URL did not return an HTML recipe page."), { status: 415 });
+    }
+
+    const recipe = getRecipeFromHtml(await readLimitedResponse(page, 2 * 1024 * 1024));
+    if (!recipe) {
+      throw Object.assign(new Error("No recipe ingredients were found on that page."), { status: 422 });
+    }
+    return recipe;
   }
 }
 
@@ -270,6 +457,14 @@ const server = http.createServer(async (request, response) => {
       const meals = await all("SELECT id, name, ingredients, servings, created_at, updated_at FROM meals ORDER BY updated_at DESC");
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({ meals }));
+      return;
+    }
+
+    if (request.method === "POST" && request.url === "/api/recipes/import") {
+      const { url } = await readJson(request);
+      const recipe = await scrapeRecipe(url);
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ recipe }));
       return;
     }
 
